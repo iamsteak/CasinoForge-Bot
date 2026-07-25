@@ -254,36 +254,34 @@ class Action(commands.Cog):
     @app_commands.checks.cooldown(1, 3600, key=lambda i: i.user.id)  # 1 hour cooldown
     async def work(self, interaction: discord.Interaction):
         """Perform work to earn coins."""
-   
         await interaction.response.defer()
         
         try:
             await self.ensure_user(interaction.user.id)
-        
-        earnings = random.randint(100, 500)
-        
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET wallet = wallet + $1, last_work = $2 WHERE user_id = $3",
-                earnings, datetime.utcnow(), str(interaction.user.id)
+            earnings = random.randint(100, 500)
+            
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE users SET wallet = wallet + $1, last_work = $2 WHERE user_id = $3",
+                    earnings, datetime.utcnow(), str(interaction.user.id)
+                )
+            
+            await interaction.followup.send(
+                f"💼 You worked hard and earned **{earnings:,}** coins!"
             )
-        
-        await interaction.followup.send(
-            f"💼 You worked hard and earned **{earnings:,}** coins!"
-        )
-except Exception as e:
-    await interaction.followup.send(f"⚠️ **Error:** `{type(e).__name__}: {e}`")
-    
-@work.error
-async def work_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.CommandOnCooldown):
-        minutes, seconds = divmod(int(error.retry_after), 60)
-        await interaction.response.send_message(
-            f"⏳ **Slow down!** You can use this command again in **{minutes}m {seconds}s**.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(f"⚠️ **Error:** `{error}`", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ **Error:** `{type(e).__name__}: {e}`")
+
+    @work.error
+    async def work_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            minutes, seconds = divmod(int(error.retry_after), 60)
+            await interaction.response.send_message(
+                f"⏳ **Slow down!** You can use this command again in **{minutes}m {seconds}s**.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(f"⚠️ **Error:** `{error}`", ephemeral=True)
 
     @app_commands.command(name="daily", description="Claim your daily reward.")
     @app_commands.checks.cooldown(1, 86400, key=lambda i: i.user.id)
