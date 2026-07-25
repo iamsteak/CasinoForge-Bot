@@ -256,7 +256,9 @@ class Action(commands.Cog):
         """Perform work to earn coins."""
    
         await interaction.response.defer()
-        await self.ensure_user(interaction.user.id)
+        
+        try:
+            await self.ensure_user(interaction.user.id)
         
         earnings = random.randint(100, 500)
         
@@ -269,7 +271,8 @@ class Action(commands.Cog):
         await interaction.followup.send(
             f"💼 You worked hard and earned **{earnings:,}** coins!"
         )
-
+except Exception as e:
+    await interaction.followup.send(f"⚠️ **Error:** `{type(e).__name__}: {e}`")
     @app_commands.command(name="daily", description="Claim your daily reward.")
     @app_commands.checks.cooldown(1, 86400, key=lambda i: i.user.id)
     async def daily(self, interaction: discord.Interaction):
