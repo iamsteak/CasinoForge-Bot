@@ -255,7 +255,7 @@ class Action(commands.Cog):
     async def work(self, interaction: discord.Interaction):
         """Perform work to earn coins."""
    
-await interaction.response.defer()
+        await interaction.response.defer()
         await self.ensure_user(interaction.user.id)
         
         earnings = random.randint(100, 500)
