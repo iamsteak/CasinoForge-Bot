@@ -273,6 +273,18 @@ class Action(commands.Cog):
         )
 except Exception as e:
     await interaction.followup.send(f"⚠️ **Error:** `{type(e).__name__}: {e}`")
+    
+@work.error
+async def work_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        minutes, seconds = divmod(int(error.retry_after), 60)
+        await interaction.response.send_message(
+            f"⏳ **Slow down!** You can use this command again in **{minutes}m {seconds}s**.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(f"⚠️ **Error:** `{error}`", ephemeral=True)
+
     @app_commands.command(name="daily", description="Claim your daily reward.")
     @app_commands.checks.cooldown(1, 86400, key=lambda i: i.user.id)
     async def daily(self, interaction: discord.Interaction):
