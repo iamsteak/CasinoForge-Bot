@@ -254,8 +254,8 @@ class Action(commands.Cog):
     @app_commands.checks.cooldown(1, 3600, key=lambda i: i.user.id)  # 1 hour cooldown
     async def work(self, interaction: discord.Interaction):
         """Perform work to earn coins."""
-        await
-interaction.response.defer()
+   
+await interaction.response.defer()
         await self.ensure_user(interaction.user.id)
         
         earnings = random.randint(100, 500)
