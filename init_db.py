@@ -97,6 +97,14 @@ async def init():
         );
     """)
 
+    # Global settings (multiplier, etc.)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+    """)
+
     print("Database initialized successfully.")
     await conn.close()
 

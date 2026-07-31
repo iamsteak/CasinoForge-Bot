@@ -34,8 +34,19 @@ class CasinoForge(commands.Bot):
         self.db_pool = db_pool
         self.creator_ids = creator_ids
         self.maintenance_mode = False
+        self.global_multiplier = 1.0
 
     async def setup_hook(self):
+        # Load global multiplier from DB
+        try:
+            async with self.db_pool.acquire() as conn:
+                result = await conn.fetchval("SELECT value FROM settings WHERE key = 'global_multiplier'")
+                if result:
+                    self.global_multiplier = float(result)
+                    logger.info(f"Loaded global multiplier: {self.global_multiplier}x")
+        except Exception as e:
+            logger.warning(f"Could not load global multiplier from DB: {e}")
+        
         # Attach the error handler directly to the tree inside the setup hook safely
         self.tree.on_error = self.on_app_command_error
 

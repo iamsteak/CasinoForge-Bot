@@ -27,13 +27,13 @@ class Fun(commands.Cog):
         
         embed.add_field(
             name="🎲 **Gambling Games**",
-            value="`/coinflip` `/slots` `/blackjack` `/roulette` `/crash` `/horserace` `/dice` `/lottery` `/gamble` `/scratchcard` `/highlow` `/mines` `/jackpot` `/plinko` `/tower` `/buy-jackpot`",
+            value="`/coinflip` `/slots` `/blackjack` `/roulette` `/crash` `/horserace` `/dice` `/lottery` `/gamble` `/scratchcard` `/highlow` `/mines` `/jackpot` `/plinko` `/tower` `/lucky-wheel` `/buy-jackpot`",
             inline=False
         )
         
         embed.add_field(
             name="💰 **Economy**",
-            value="`/balance` `/deposit` `/withdraw` `/work` `/daily` `/payday` `/give` `/request` `/leaderboard` `/leaderboard-global` `/rob` `/shop` `/buy-item` `/beg` `/market` `/portfolio` `/invest` `/sell-stock`",
+            value="`/balance` `/deposit` `/withdraw` `/work` `/daily` `/payday` `/give` `/request` `/leaderboard` `/leaderboard-global` `/rob` `/steal` `/shop` `/buy-item` `/beg` `/market` `/portfolio` `/invest` `/sell-stock`",
             inline=False
         )
         
@@ -45,7 +45,7 @@ class Fun(commands.Cog):
         
         embed.add_field(
             name="👨‍💻 **Developer Commands**",
-            value="`/maintenance` `/dev-reload` `/dev-status` `/dev-eval` `/dev-sql` `/dev-guilds` `/dev-sync` `/global-say` `/dev-logs` `/dev-leave` `/dev-shutdown` `/dev-shell` `/dev-reboot` `/dev-inst-jp` `/dev-gift`",
+            value="`/maintenance` `/dev-reload` `/dev-status` `/dev-eval` `/dev-sql` `/dev-guilds` `/dev-sync` `/global-say` `/dev-logs` `/dev-leave` `/dev-shutdown` `/dev-shell` `/dev-reboot` `/dev-inst-jp` `/dev-gift` `/dev-multiplier`",
             inline=False
         )
         

@@ -432,6 +432,29 @@ class DevGiftView(discord.ui.View):
         logger.info(f"Dev gift claimed: {self.target_user.id} received {self.amount} coins from {self.dev_user.id}")
 
 
+    @app_commands.command(name="dev-multiplier", description="[Creator] Set a global multiplier for all income and gambling payouts.")
+    @CreatorOnly()
+    @app_commands.describe(multiplier="Multiplier amount (e.g. 1.5 for 1.5x)")
+    async def dev_multiplier(self, interaction: discord.Interaction, multiplier: float):
+        """Set the global income/gambling multiplier."""
+        if multiplier < 0.1 or multiplier > 10.0:
+            return await interaction.response.send_message("❌ Multiplier must be between 0.1 and 10.0.", ephemeral=True)
+        
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('global_multiplier', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+                str(multiplier)
+            )
+        
+        self.bot.global_multiplier = multiplier
+        
+        await interaction.response.send_message(
+            f"✅ Global multiplier set to **{multiplier}x**. All income and gambling payouts will be multiplied by this amount. Set to **1.0** to reset to normal.",
+            ephemeral=True
+        )
+        logger.info(f"Global multiplier set to {multiplier}x by {interaction.user.id}")
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(Creator(bot))
     logger.info("Creator cog loaded")

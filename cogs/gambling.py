@@ -166,11 +166,12 @@ class Gambling(commands.Cog):
         return True
 
     async def payout(self, user_id: int, amount: int):
-        """Adds winnings to the user's wallet."""
+        """Adds winnings to the user's wallet (with global multiplier)."""
+        multiplied = int(amount * self.bot.global_multiplier)
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
                 "UPDATE users SET wallet = wallet + $1 WHERE user_id = $2",
-                amount,
+                multiplied,
                 str(user_id)
             )
 
@@ -705,6 +706,69 @@ class Gambling(commands.Cog):
                 self.stop()
 
         await interaction.response.send_message("🏰 **Tower Game Started!** How high can you go?", embed=discord.Embed(title="🏰 The Tower", description="Climb for higher multipliers, but one fall and you lose it all!"), view=TowerView(self, interaction, bet))
+
+    @app_commands.command(name="lucky-wheel", description="Spin the lucky wheel for a chance at massive prizes.")
+    @app_commands.describe(bet="Amount to bet")
+    async def lucky_wheel(self, interaction: discord.Interaction, bet: int):
+        """Lucky wheel spinning game with tiered prizes."""
+        if not await self.process_bet(interaction, bet):
+            return
+        
+        await interaction.response.defer()
+        
+        # Wheel segments: [label, multiplier, weight]
+        wheel_segments = [
+            ("JACKPOT", 10, 3),
+            ("MEGA WIN", 5, 8),
+            ("BIG WIN", 3, 15),
+            ("NICE!", 2, 20),
+            ("SMALL WIN", 1.5, 25),
+            ("BANKRUPT", 0, 19),
+            ("HALF BACK", 0.5, 10),
+        ]
+        
+        # Weighted random selection
+        total_weight = sum(w for _, _, w in wheel_segments)
+        roll = random.random() * total_weight
+        cumulative = 0
+        selected_label, selected_mult, _ = wheel_segments[0]
+        
+        for label, mult, weight in wheel_segments:
+            cumulative += weight
+            if roll <= cumulative:
+                selected_label, selected_mult, _ = label, mult, weight
+                break
+        
+        # Build the wheel display
+        wheel_lines = []
+        for label, mult, _ in wheel_segments:
+            if label == selected_label:
+                wheel_lines.append(f"➤ **{label}** ({mult}x)")
+            else:
+                wheel_lines.append(f"  {label} ({mult}x)")
+        
+        wheel_text = "\n".join(wheel_lines)
+        
+        await asyncio.sleep(1.5)
+        
+        if selected_mult == 0:
+            # Bankrupt
+            msg = f"🎡 **Lucky Wheel Result:**\n```\n{wheel_text}\n```\n💀 **BANKRUPT!** You landed on bankruptcy. Lost **{bet:,}** coins."
+        elif selected_mult < 1:
+            # Half back
+            winnings = int(bet * selected_mult)
+            await self.payout(interaction.user.id, winnings)
+            msg = f"🎡 **Lucky Wheel Result:**\n```\n{wheel_text}\n```\n📉 Landed on **{selected_label}** ({selected_mult}x). You got back **{winnings:,}** coins. Net loss: **{bet - winnings:,}** coins."
+        elif selected_mult == 1.5:
+            winnings = int(bet * selected_mult)
+            await self.payout(interaction.user.id, winnings)
+            msg = f"🎡 **Lucky Wheel Result:**\n```\n{wheel_text}\n```\n✨ Landed on **{selected_label}** ({selected_mult}x)! You won **{winnings:,}** coins!"
+        else:
+            winnings = int(bet * selected_mult)
+            await self.payout(interaction.user.id, winnings)
+            msg = f"🎡 **Lucky Wheel Result:**\n```\n{wheel_text}\n```\n🎉 Landed on **{selected_label}** ({selected_mult}x)! You won **{winnings:,}** coins!"
+        
+        await interaction.followup.send(msg)
 
     @commands.Cog.listener()
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):

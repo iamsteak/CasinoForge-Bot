@@ -30,6 +30,8 @@ class Beg(commands.Cog):
             return
 
         earnings = random.randint(75, 350)
+        # Apply global multiplier
+        earnings = int(earnings * self.bot.global_multiplier)
         user_id_str = str(interaction.user.id)
 
         try:

@@ -259,6 +259,8 @@ class Action(commands.Cog):
         try:
             await self.ensure_user(interaction.user.id)
             earnings = random.randint(200, 800)
+            # Apply global multiplier
+            earnings = int(earnings * self.bot.global_multiplier)
             
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
@@ -289,6 +291,8 @@ class Action(commands.Cog):
         """Claim daily coins."""
         await self.ensure_user(interaction.user.id)
         reward = 1000
+        # Apply global multiplier
+        reward = int(reward * self.bot.global_multiplier)
         
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
@@ -304,6 +308,8 @@ class Action(commands.Cog):
         """Small passive income."""
         await self.ensure_user(interaction.user.id)
         reward = random.randint(50, 150)
+        # Apply global multiplier
+        reward = int(reward * self.bot.global_multiplier)
         
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
@@ -383,6 +389,69 @@ class Action(commands.Cog):
                 fine = random.randint(200, 500)
                 await conn.execute("UPDATE users SET wallet = GREATEST(0, wallet - $1) WHERE user_id = $2", fine, str(interaction.user.id))
                 await interaction.response.send_message(f"👮 **CAUGHT!** You were caught trying to rob {user.mention} and fined **{fine:,}** coins.")
+
+    @app_commands.command(name="steal", description="Sneakily steal from another user's wallet.")
+    @app_commands.describe(user="User to steal from")
+    @app_commands.checks.cooldown(1, 10800, key=lambda i: i.user.id)  # 3 hour cooldown
+    async def steal(self, interaction: discord.Interaction, user: discord.User):
+        """Steal coins from another user — sneakier but riskier than rob."""
+        if user == interaction.user:
+            return await interaction.response.send_message("❌ You can't steal from yourself.", ephemeral=True)
+        if user.bot:
+            return await interaction.response.send_message("❌ You can't steal from a bot.", ephemeral=True)
+            
+        await self.ensure_user(interaction.user.id)
+        await self.ensure_user(user.id)
+        
+        async with self.bot.db_pool.acquire() as conn:
+            target_bal = await conn.fetchval("SELECT wallet FROM users WHERE user_id = $1", str(user.id))
+            if target_bal < 1000:
+                return await interaction.response.send_message(f"❌ {user.mention} is too poor to steal from! They need at least 1,000 coins.", ephemeral=True)
+            
+            # 30% success chance (riskier than rob)
+            if random.random() < 0.30:
+                # Steal 15-35% of the target's wallet
+                percentage = random.uniform(0.15, 0.35)
+                amount = max(100, int(target_bal * percentage))
+                
+                async with conn.transaction():
+                    await conn.execute("UPDATE users SET wallet = wallet - $1 WHERE user_id = $2", amount, str(user.id))
+                    await conn.execute("UPDATE users SET wallet = wallet + $1 WHERE user_id = $2", amount, str(interaction.user.id))
+                
+                # 10% chance the target gets notified
+                if random.random() < 0.10:
+                    try:
+                        await user.send(f"🚨 **ALERT!** Someone tried to steal from you! You lost **{amount:,}** coins from your wallet.")
+                    except:
+                        pass
+                
+                await interaction.response.send_message(f"🕵️ **SUCCESS!** You sneakily stole **{amount:,}** coins from {user.mention}!")
+            else:
+                fine = random.randint(300, 600)
+                await conn.execute("UPDATE users SET wallet = GREATEST(0, wallet - $1) WHERE user_id = $2", fine, str(interaction.user.id))
+                
+                # Check if target was notified
+                notified = False
+                if random.random() < 0.10:
+                    try:
+                        await user.send(f"🚨 **ALERT!** Someone tried to steal from you but got caught! They were fined **{fine:,}** coins.")
+                        notified = True
+                    except:
+                        pass
+                
+                await interaction.response.send_message(f"👮 **BUSTED!** {user.mention}'s security caught you trying to steal and fined you **{fine:,}** coins.{f' They were also notified!' if notified else ''}")
+
+    @steal.error
+    async def steal_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            # If they got caught (failed), reduce cooldown to 30 mins
+            remaining = error.retry_after
+            await interaction.response.send_message(
+                f"⏳ **Slow down!** You can attempt to steal again in **{int(remaining // 60)}m {int(remaining % 60)}s**.",
+                ephemeral=True
+            )
+        else:
+            raise error
 
     @app_commands.command(name="shop", description="View items available for purchase.")
     async def shop(self, interaction: discord.Interaction):
