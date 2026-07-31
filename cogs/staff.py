@@ -40,12 +40,11 @@ class Staff(commands.Cog):
                 amount,
                 str(user.id)
             )
+            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "ADD", amount)
         
         await interaction.response.send_message(
             f"✅ Added **{amount:,}** coins to {user.mention}'s wallet."
         )
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "ADD", amount)
 
     @app_commands.command(name="eco-remove", description="[Admin] Remove coins from a user's wallet.")
     @app_commands.describe(user="User to remove coins from", amount="Amount to remove")
@@ -76,12 +75,11 @@ class Staff(commands.Cog):
                 amount,
                 str(user.id)
             )
+            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "REMOVE", amount)
         
         await interaction.response.send_message(
             f"✅ Removed **{amount:,}** coins from {user.mention}'s wallet."
         )
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "REMOVE", amount)
 
     @app_commands.command(name="eco-set", description="[Admin] Set a user's wallet balance.")
     @app_commands.describe(user="User to set balance for", amount="New balance amount")
@@ -94,10 +92,9 @@ class Staff(commands.Cog):
         await self.ensure_user(user.id)
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute("UPDATE users SET wallet = $1 WHERE user_id = $2", amount, str(user.id))
+            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "SET", amount)
         
         await interaction.response.send_message(f"✅ Set {user.mention}'s wallet to **{amount:,}** coins.")
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute("INSERT INTO eco_logs (staff_id, target_id, action, amount) VALUES ($1, $2, $3, $4)", str(interaction.user.id), str(user.id), "SET", amount)
 
     @app_commands.command(name="eco-reset", description="[Admin] Reset a user's entire profile.")
     @app_commands.describe(user="User to reset")

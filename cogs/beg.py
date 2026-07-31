@@ -18,7 +18,7 @@ class Beg(commands.Cog):
     # chill out for 45 seconds between asking for free money
     @app_commands.checks.cooldown(1, 45.0, key=lambda i: i.user.id)
     async def beg(self, interaction: discord.Interaction):
-        # 45 percent chance they get rejected to keep it slightly grindy
+        # 33 percent chance they get rejected to keep it slightly grindy
         if random.random() < 0.33:
             rejections = [
                 "Get a job, bum!",
@@ -29,7 +29,7 @@ class Beg(commands.Cog):
             await interaction.response.send_message(f"❌ {random.choice(rejections)}", ephemeral=True)
             return
 
-        earnings = random.randint(50, 250)
+        earnings = random.randint(75, 350)
         user_id_str = str(interaction.user.id)
 
         try:

@@ -10,6 +10,7 @@ from discord.ext import commands
 import logging
 import sys
 import os
+from datetime import datetime, timezone
 
 logger = logging.getLogger('CasinoForge.Creator')
 
@@ -343,6 +344,93 @@ class Creator(commands.Cog):
                     logger.warning(f"Could not send DM to user {t['user_id']}: {e}")
                     
         await interaction.followup.send(f"✅ Jackpot #{jackpot_id} forcefully ended. Winner: **{winner_name}**.", ephemeral=True)
+
+    @app_commands.command(name="dev-gift", description="[Creator] Gift coins to a user via DM with a claim button.")
+    @CreatorOnly()
+    @app_commands.describe(user="User to gift coins to", amount="Amount of coins to gift")
+    async def dev_gift(self, interaction: discord.Interaction, user: discord.User, amount: int):
+        """Developer: Gift coins to a user via DM with a claim button."""
+        if amount <= 0:
+            return await interaction.response.send_message("❌ Amount must be positive.", ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Ensure the user exists in the database
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+                str(user.id)
+            )
+        
+        # Create the claim view
+        view = DevGiftView(self.bot.db_pool, interaction.user, user, amount)
+        
+        # Create the gift embed
+        embed = discord.Embed(
+            title="🎁 Dev Gift Received!",
+            description=f"A developer has gifted you **{amount:,} Coins**!",
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text=f"Gifted by: {interaction.user.display_name} ({interaction.user.name})")
+        
+        # Try to send DM
+        try:
+            await user.send(embed=embed, view=view)
+            await interaction.followup.send(
+                f"✅ Sent a gift of **{amount:,}** coins to **{user.display_name}** via DM!",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"❌ Could not send DM to {user.mention}. They may have DMs disabled.",
+                ephemeral=True
+            )
+
+
+class DevGiftView(discord.ui.View):
+    def __init__(self, db_pool, dev_user, target_user, amount):
+        super().__init__(timeout=None)  # Persistent view, no timeout
+        self.db_pool = db_pool
+        self.dev_user = dev_user
+        self.target_user = target_user
+        self.amount = amount
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.target_user.id:
+            await interaction.response.send_message(
+                "❌ This gift is not for you!",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Claim Now", style=discord.ButtonStyle.green, custom_id="dev_gift_claim")
+    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET wallet = wallet + $1 WHERE user_id = $2",
+                self.amount,
+                str(self.target_user.id)
+            )
+        
+        # Disable all buttons so it can't be claimed again
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+        
+        # Update the message to show it's been claimed
+        embed = discord.Embed(
+            title="✅ Gift Claimed!",
+            description=f"You have successfully claimed **{self.amount:,} Coins** from **{self.dev_user.display_name}**!",
+            color=discord.Color.green()
+        )
+        embed.set_footer(text=f"Gifted by: {self.dev_user.display_name} ({self.dev_user.name})")
+        
+        await interaction.edit_original_response(embed=embed, view=None)
+        logger.info(f"Dev gift claimed: {self.target_user.id} received {self.amount} coins from {self.dev_user.id}")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Creator(bot))

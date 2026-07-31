@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 import random
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger('CasinoForge.Action')
 
@@ -258,12 +258,12 @@ class Action(commands.Cog):
         
         try:
             await self.ensure_user(interaction.user.id)
-            earnings = random.randint(100, 500)
+            earnings = random.randint(200, 800)
             
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE users SET wallet = wallet + $1, last_work = $2 WHERE user_id = $3",
-                    earnings, datetime.utcnow(), str(interaction.user.id)
+                    earnings, datetime.now(timezone.utc), str(interaction.user.id)
                 )
             
             await interaction.followup.send(
@@ -293,7 +293,7 @@ class Action(commands.Cog):
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
                 "UPDATE users SET wallet = wallet + $1, last_daily = $2 WHERE user_id = $3",
-                reward, datetime.utcnow(), str(interaction.user.id)
+                reward, datetime.now(timezone.utc), str(interaction.user.id)
             )
         
         await interaction.response.send_message(f"🎁 You claimed your daily reward of **{reward:,}** coins!")

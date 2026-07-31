@@ -194,7 +194,7 @@ class Gambling(commands.Cog):
             winnings = bet * 2
             await self.payout(interaction.user.id, winnings)
             await interaction.followup.send(
-                f"🪙 **Coin landed on {result.upper()}!** You win **{winnings:,}** coins! 🎉"
+                f"🪙 **Coin landed on {result.upper()}!** Payout: **{winnings:,}** coins (2x your bet). 🎉"
             )
         else:
             await interaction.followup.send(
@@ -228,8 +228,8 @@ class Gambling(commands.Cog):
                 msg = f"{result}\n🎉 **WIN!** Three matches! You win **{winnings:,}** coins!"
             await self.payout(interaction.user.id, winnings)
         elif spin1 == spin2 or spin2 == spin3:
-            winnings = bet * 2
-            msg = f"{result}\n✨ **Two matches!** You win **{winnings:,}** coins!"
+            winnings = int(bet * 1.5)
+            msg = f"{result}\n✨ **Two matches!** You win **{winnings:,}** coins! (1.5x payout)"
             await self.payout(interaction.user.id, winnings)
         else:
             msg = f"{result}\n❌ No matches. You lost **{bet:,}** coins."
