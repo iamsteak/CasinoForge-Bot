@@ -51,7 +51,7 @@ class Fun(commands.Cog):
         
         embed.add_field(
             name="🎉 **Fun**",
-            value="`/quote` `/roll` `/flip` `/8ball` `/choose` `/rps` `/slots-free` `/coinflip-free` `/meme` `/joke`",
+            value="`/quote` `/roll` `/flip` `/8ball` `/choose` `/rps` `/slots-free` `/coinflip-free` `/meme` `/joke` `/invite` `/tos` `/privacy` `/support`",
             inline=False
         )
         
@@ -184,6 +184,88 @@ class Fun(commands.Cog):
             "I used to be a professional gambler, but I lost interest... and my house."
         ]
         await interaction.response.send_message(f"😂 {random.choice(jokes)}")
+
+    @app_commands.command(name="invite", description="Get the bot invite link.")
+    async def invite(self, interaction: discord.Interaction):
+        """Send bot invite link."""
+        view = discord.ui.View(timeout=300)
+        view.add_item(discord.ui.Button(
+            label="Invite CasinoForge",
+            url="https://discord.com/oauth2/authorize?client_id=1524862325927182536&permissions=543231040&scope=bot+applications.commands",
+            style=discord.ButtonStyle.link,
+            emoji="➕"
+        ))
+        view.add_item(discord.ui.Button(
+            label="Official Server",
+            url="https://discord.gg/mQjctHh2Fd",
+            style=discord.ButtonStyle.link,
+            emoji="💬"
+        ))
+        
+        embed = discord.Embed(
+            title="🎰 Invite CasinoForge",
+            description="Click the button below to invite CasinoForge to your server!\n\nAlso join our **[Official Server](https://discord.gg/mQjctHh2Fd)** for support and updates.",
+            color=discord.Color.purple()
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="tos", description="View the CasinoForge Terms of Service.")
+    async def tos(self, interaction: discord.Interaction):
+        """Send Terms of Service link."""
+        view = discord.ui.View(timeout=300)
+        view.add_item(discord.ui.Button(
+            label="Read Terms of Service",
+            url="https://bryce.is-a.dev/casinoforge/tos",
+            style=discord.ButtonStyle.link,
+            emoji="📜"
+        ))
+        
+        embed = discord.Embed(
+            title="📜 Terms of Service",
+            description="By using CasinoForge, you agree to our [Terms of Service](https://bryce.is-a.dev/casinoforge/tos).\n\nPlease read them carefully before using the bot.",
+            color=discord.Color.blue()
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="privacy", description="View the CasinoForge Privacy Policy.")
+    async def privacy(self, interaction: discord.Interaction):
+        """Send Privacy Policy link."""
+        view = discord.ui.View(timeout=300)
+        view.add_item(discord.ui.Button(
+            label="Read Privacy Policy",
+            url="https://bryce.is-a.dev/casinoforge/privacy",
+            style=discord.ButtonStyle.link,
+            emoji="🔒"
+        ))
+        
+        embed = discord.Embed(
+            title="🔒 Privacy Policy",
+            description="CasinoForge collects minimal data. Read our full [Privacy Policy](https://bryce.is-a.dev/casinoforge/privacy) to learn more about how we handle your information.",
+            color=discord.Color.blue()
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="support", description="Get the official support server invite.")
+    async def support(self, interaction: discord.Interaction):
+        """Send support server invite."""
+        view = discord.ui.View(timeout=300)
+        view.add_item(discord.ui.Button(
+            label="Join Support Server",
+            url="https://discord.gg/mQjctHh2Fd",
+            style=discord.ButtonStyle.link,
+            emoji="💬"
+        ))
+        
+        embed = discord.Embed(
+            title="💬 Support Server",
+            description="Need help? Join the **[CasinoForge Official Server](https://discord.gg/mQjctHh2Fd)** for support, updates, and community!",
+            color=discord.Color.green()
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Fun(bot))
