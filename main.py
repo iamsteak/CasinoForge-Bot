@@ -50,7 +50,7 @@ class CasinoForge(commands.Bot):
         # Attach the error handler directly to the tree inside the setup hook safely
         self.tree.on_error = self.on_app_command_error
 
-        initial_cogs = ["cogs.gambling", "cogs.staff", "cogs.creator", "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest"]
+        initial_cogs = ["cogs.gambling", "cogs.staff", "cogs.creator", "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest", "cogs.stats"]
         
         for cog in initial_cogs:
             try:

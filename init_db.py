@@ -97,6 +97,20 @@ async def init():
         );
     """)
 
+    # Transaction / Game Log for tracking stats
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_log (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT,
+            guild_id TEXT,
+            action TEXT,
+            amount BIGINT,
+            game TEXT,
+            result TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
     # Global settings (multiplier, etc.)
     await conn.execute("""
         CREATE TABLE IF NOT EXISTS settings (
