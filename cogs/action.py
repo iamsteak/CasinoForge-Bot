@@ -339,26 +339,35 @@ class Action(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="leaderboard-global", description="Show the top richest users globally.")
+        @app_commands.command(name="leaderboard-global", description="Show the top richest users globally.")
+    
     async def leaderboard_global(self, interaction: discord.Interaction):
         """Global leaderboard."""
+        await interaction.response.defer(ephemeral=False)
+
         async with self.bot.db_pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT user_id, (wallet + bank) as total FROM users ORDER BY total DESC LIMIT 10"
             )
-        
+
         embed = discord.Embed(title="🌍 Global Leaderboard", color=discord.Color.purple())
-        
+
         description = ""
         for i, row in enumerate(rows, 1):
-            try:
-                user = await self.bot.fetch_user(int(row['user_id']))
-                name = user.display_name
-            except:
-                name = f"User {row['user_id']}"
+            user_id = int(row['user_id'])
+            user = self.bot.get_user(user_id)
+            if not user:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except:
+                    user = None
+
+            name = user.display_name if user else f"User {user_id}"
             description += f"**{i}.** {name} — **{row['total']:,}** coins\n"
-        
+
         embed.description = description if description else "No data found."
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
+
 
     @app_commands.command(name="rob", description="Attempt to rob another user's wallet.")
     @app_commands.describe(user="User to rob")
