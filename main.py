@@ -103,8 +103,7 @@ class CasinoForge(commands.Bot):
         async with self.db_pool.acquire() as conn:
             # Find active jackpots that have ended
             ended_jackpots = await conn.fetch(
-                "SELECT id, total_prize FROM jackpot WHERE is_active = TRUE AND end_time <= $1",
-                datetime.now(timezone.utc)
+                "SELECT id, total_prize FROM jackpot WHERE is_active = TRUE AND end_time <= NOW()"
             )
             
             for jackpot in ended_jackpots:
