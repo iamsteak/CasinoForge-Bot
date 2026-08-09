@@ -46,14 +46,20 @@ class Creator(commands.Cog):
     @app_commands.command(name="dev-logs", description="[Creator] Fetch the latest bot logs.")
     @CreatorOnly()
     async def dev_logs(self, interaction: discord.Interaction):
-        """Fetch logs."""
+        """Fetch logs from in-memory buffer (Wispbyte compatible)."""
         try:
-            with open("bot.log", "r") as f:
-                logs = f.readlines()[-20:]
-            log_text = "".join(logs)
-            await interaction.response.send_message(f"📜 **Latest Logs:**\n```\n{log_text}\n```", ephemeral=True)
-        except:
-            await interaction.response.send_message("❌ Could not read log file.", ephemeral=True)
+            from main import log_buffer
+            logs = list(log_buffer)[-25:]
+            if not logs:
+                await interaction.response.send_message("📜 **No logs available yet.**", ephemeral=True)
+                return
+            log_text = "\n".join(logs)
+            await interaction.response.send_message(f"📜 **Latest Logs (last 25):**\n```\n{log_text}\n```", ephemeral=True)
+        except ImportError:
+            # Fallback if imported directly from cogs directory
+            await interaction.response.send_message("📜 **Logs are available in the Wispbyte Console tab.**\nUse the panel to view full logs.", ephemeral=True)
+        except Exception:
+            await interaction.response.send_message("❌ Could not retrieve logs. Check the Wispbyte Console.", ephemeral=True)
 
     @app_commands.command(name="dev-leave", description="[Creator] Force the bot to leave a guild.")
     @CreatorOnly()
@@ -104,9 +110,11 @@ class Creator(commands.Cog):
     @app_commands.command(name="dev-shutdown", description="[Creator] Shutdown the bot.")
     @CreatorOnly()
     async def dev_shutdown(self, interaction: discord.Interaction):
-        """Developer: Shutdown bot."""
+        """Developer: Shutdown bot. Wispbyte will auto-restart unless stopped from panel."""
         await interaction.response.send_message(
-            "🛑 Bot shutting down...",
+            "🛑 **Bot shutting down...**\n\n"
+            "⚠️ Note: On Wispbyte, the server may auto-restart the bot.\n"
+            "To fully stop it, use the **Stop** button in your Wispbyte panel.",
         )
         logger.warning("Bot shutdown initiated by creator")
         await self.bot.close()
@@ -263,24 +271,26 @@ class Creator(commands.Cog):
     @CreatorOnly()
     @app_commands.describe(command="Shell command to run")
     async def dev_shell(self, interaction: discord.Interaction, command: str):
-        """Developer: Run shell command."""
-        await interaction.response.defer(ephemeral=True)
-        try:
-            import subprocess
-            result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, timeout=10).decode()
-            if len(result) > 1900:
-                result = result[:1900] + "\n... (truncated)"
-            await interaction.followup.send(f"💻 **Shell Output:**\n```\n{result}\n```")
-        except Exception as e:
-            await interaction.followup.send(f"❌ **Error:**\n```\n{e}\n```")
+        """Developer: Run shell command. Not available on Wispbyte - use the Console tab instead."""
+        await interaction.response.send_message(
+            "⚠️ **Shell commands are not available on Wispbyte.**\n"
+            "Wispbyte runs the bot in a container without shell access.\n"
+            "To run commands, use the **Console** tab in your Wispbyte panel.\n"
+            "You can type commands directly in the console.",
+            ephemeral=True
+        )
 
     @app_commands.command(name="dev-reboot", description="[Creator] Reboot the bot process.")
     @CreatorOnly()
     async def dev_reboot(self, interaction: discord.Interaction):
-        """Developer: Reboot bot."""
-        await interaction.response.send_message("🔄 Rebooting...")
-        logger.warning("Bot reboot initiated by creator")
-        os.execv(sys.executable, ['python3'] + sys.argv)
+        """Developer: Reboot bot. Not available on Wispbyte - use panel restart."""
+        await interaction.response.send_message(
+            "⚠️ **Reboot is not available on Wispbyte.**\n"
+            "The bot runs in a container and cannot self-restart.\n"
+            "To reboot, go to your **Wispbyte panel → Console → Restart**.\n\n"
+            "Alternatively, use `/dev-reload <module>` to reload a specific cog without restarting.",
+            ephemeral=True
+        )
 
     @app_commands.command(name="dev-inst-jp", description="[Creator] Forcefully end and announce the jackpot winner instantly.")
     @CreatorOnly()

@@ -10,13 +10,32 @@ import asyncpg
 import os
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
+# In-memory log buffer for Wispbyte compatibility (no file logging)
+log_buffer = deque(maxlen=100)
+
+class MemoryLogHandler(logging.Handler):
+    """Stores log entries in memory for retrieval via /dev-logs on Wispbyte."""
+    def emit(self, record):
+        log_entry = self.format(record)
+        log_buffer.append(log_entry)
+
 # 1. Advanced Logging Setup
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+memory_handler = MemoryLogHandler()
+memory_handler.setLevel(logging.INFO)
+memory_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+root_logger.addHandler(memory_handler)
+
 logger = logging.getLogger('CasinoForge')
 
 class CasinoForge(commands.Bot):
