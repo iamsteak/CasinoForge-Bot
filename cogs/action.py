@@ -481,16 +481,17 @@ class Action(commands.Cog):
     @app_commands.describe(item_name="Name of the item to buy")
     async def buy_item(self, interaction: discord.Interaction, item_name: str):
         """Buy item command."""
+        await interaction.response.defer(ephemeral=True)
         await self.ensure_user(interaction.user.id)
         
         async with self.bot.db_pool.acquire() as conn:
             item = await conn.fetchrow("SELECT id, name, price, type FROM items WHERE LOWER(name) = $1", item_name.lower())
             if not item:
-                return await interaction.response.send_message("❌ Item not found.", ephemeral=True)
+                return await interaction.followup.send("❌ Item not found.")
             
             user_wallet = await conn.fetchval("SELECT wallet FROM users WHERE user_id = $1", str(interaction.user.id))
             if user_wallet < item['price']:
-                return await interaction.response.send_message(f"❌ You don't have enough coins. Price: **{item['price']:,}**", ephemeral=True)
+                return await interaction.followup.send(f"❌ You don't have enough coins. Price: **{item['price']:,}**")
             
             async with conn.transaction():
                 await conn.execute("UPDATE users SET wallet = wallet - $1 WHERE user_id = $2", item['price'], str(interaction.user.id))
@@ -503,8 +504,8 @@ class Action(commands.Cog):
                 if item['name'] == 'Bank Card':
                     await conn.execute("UPDATE users SET bank_limit = bank_limit + 10000 WHERE user_id = $1", str(interaction.user.id))
             
-            await interaction.response.send_message(f"🛍️ You bought a **{item['name']}** for **{item['price']:,}** coins!")
-
+            await interaction.followup.send(f"🛍️ You bought a **{item['name']}** for **{item['price']:,}** coins!")
+    
     @app_commands.command(name="give", description="Give coins to another user.")
     @app_commands.describe(user="User to give coins to", amount="Amount to give")
     async def give(self, interaction: discord.Interaction, user: discord.User, amount: int):
