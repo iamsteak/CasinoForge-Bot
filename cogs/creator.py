@@ -231,7 +231,7 @@ class Creator(commands.Cog):
     async def global_say(self, interaction: discord.Interaction, message: str):
         await interaction.response.defer(ephemeral=True)
         try:
-            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0) as conn:
+            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=20.0) as conn:
                 rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
         except Exception:
             await interaction.followup.send("❌ **Database connection timeout.** Could not fetch announcement channels. Check your DATABASE_URL.", ephemeral=True)
