@@ -230,18 +230,23 @@ class Creator(commands.Cog):
     @app_commands.describe(message="The message or announcement content to broadcast everywhere")
     async def global_say(self, interaction: discord.Interaction, message: str):
         await interaction.response.defer(ephemeral=True)
+        
+        rows = []
         try:
-            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0) as conn:
+            conn = await asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0)
+            async with conn:
                 rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
         except Exception:
             await interaction.followup.send("❌ **Database connection timeout.** Could not fetch announcement channels. Check your DATABASE_URL.", ephemeral=True)
             return
+
         if not rows:
             await interaction.followup.send(
                 "❌ No servers have configured a global announcement channel using `/global-announcement-setup` yet.",
                 ephemeral=True
             )
             return
+
         success_count = 0
         fail_count = 0
         for row in rows:
@@ -258,12 +263,14 @@ class Creator(commands.Cog):
                 success_count += 1
             except Exception:
                 fail_count += 1
+
         await interaction.followup.send(
             f"📢 **Global Announcement Dispatched!**\n"
             f"✅ Sent successfully to **{success_count}** channel(s).\n"
             f"❌ Failed/Skipped **{fail_count}** channel(s).",
             ephemeral=True
         )
+
 
     @app_commands.command(name="dev-shell", description="[Creator] Execute a shell command.")
     @CreatorOnly()
