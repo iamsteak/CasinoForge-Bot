@@ -7,6 +7,7 @@ Developer-only commands for bot management
 import discord
 from discord import app_commands
 from discord.ext import commands
+import asyncio
 import logging
 import sys
 import os
@@ -229,37 +230,34 @@ class Creator(commands.Cog):
     @app_commands.describe(message="The message or announcement content to broadcast everywhere")
     async def global_say(self, interaction: discord.Interaction, message: str):
         await interaction.response.defer(ephemeral=True)
-        
-        async with self.bot.db_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
-            
+        try:
+            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0) as conn:
+                rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
+        except Exception:
+            await interaction.followup.send("❌ **Database connection timeout.** Could not fetch announcement channels. Check your DATABASE_URL.", ephemeral=True)
+            return
         if not rows:
             await interaction.followup.send(
                 "❌ No servers have configured a global announcement channel using `/global-announcement-setup` yet.",
                 ephemeral=True
             )
             return
-
         success_count = 0
         fail_count = 0
-
         for row in rows:
             channel_id = int(row['announcement_channel_id'])
             channel = self.bot.get_channel(channel_id)
-            
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
                 except Exception:
                     fail_count += 1
                     continue
-                    
             try:
                 await channel.send(message)
                 success_count += 1
             except Exception:
                 fail_count += 1
-
         await interaction.followup.send(
             f"📢 **Global Announcement Dispatched!**\n"
             f"✅ Sent successfully to **{success_count}** channel(s).\n"
@@ -373,7 +371,7 @@ class Creator(commands.Cog):
             )
         
         # Create the claim view
-        view = DevGiftView(self.bot.db_pool, interaction.user, user, amount)
+        view = DevGiftView(self.bot.db_pool, self.bot, interaction.user, user, amount)
         
         # Create the gift embed
         embed = discord.Embed(
@@ -398,9 +396,10 @@ class Creator(commands.Cog):
 
 
 class DevGiftView(discord.ui.View):
-    def __init__(self, db_pool, dev_user, target_user, amount):
+    def __init__(self, db_pool, bot, dev_user, target_user, amount):
         super().__init__(timeout=None)  # Persistent view, no timeout
         self.db_pool = db_pool
+        self.bot = bot
         self.dev_user = dev_user
         self.target_user = target_user
         self.amount = amount
@@ -418,28 +417,32 @@ class DevGiftView(discord.ui.View):
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET wallet = wallet + $1 WHERE user_id = $2",
-                self.amount,
-                str(self.target_user.id)
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE users SET wallet = wallet + $1 WHERE user_id = $2",
+                    self.amount,
+                    str(self.target_user.id)
+                )
+            
+            # Disable all buttons so it can't be claimed again
+            for child in self.children:
+                if isinstance(child, discord.ui.Button):
+                    child.disabled = True
+            
+            # Update the message to show it's been claimed
+            embed = discord.Embed(
+                title="✅ Gift Claimed!",
+                description=f"You have successfully claimed **{self.amount:,} Coins** from **{self.dev_user.display_name}**!",
+                color=discord.Color.green()
             )
-        
-        # Disable all buttons so it can't be claimed again
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
-        
-        # Update the message to show it's been claimed
-        embed = discord.Embed(
-            title="✅ Gift Claimed!",
-            description=f"You have successfully claimed **{self.amount:,} Coins** from **{self.dev_user.display_name}**!",
-            color=discord.Color.green()
-        )
-        embed.set_footer(text=f"Gifted by: {self.dev_user.display_name} ({self.dev_user.name})")
-        
-        await interaction.edit_original_response(embed=embed, view=None)
-        logger.info(f"Dev gift claimed: {self.target_user.id} received {self.amount} coins from {self.dev_user.id}")
+            embed.set_footer(text=f"Gifted by: {self.dev_user.display_name} ({self.dev_user.name})")
+            
+            await interaction.edit_original_response(embed=embed, view=None)
+            logger.info(f"Dev gift claimed: {self.target_user.id} received {self.amount} coins from {self.dev_user.id}")
+        except Exception as e:
+            logger.error(f"Failed to claim dev gift: {e}")
+            await interaction.followup.send(f"❌ Failed to claim gift. Please try again or contact support.\nError: `{e}`", ephemeral=True)
 
 
     @app_commands.command(name="dev-multiplier", description="[Creator] Set a global multiplier for all income and gambling payouts.")

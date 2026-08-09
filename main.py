@@ -78,6 +78,14 @@ class CasinoForge(commands.Bot):
             except Exception as e:
                 logger.warning(f"Skipped loading {cog}: {e}")
 
+        # Register persistent views so buttons keep working after bot restart
+        try:
+            from cogs.creator import DevGiftView
+            self.add_view(DevGiftView(self.db_pool, self, discord.Object(id=0), discord.Object(id=0), 0))
+            logger.info("Registered persistent views (DevGiftView)")
+        except Exception as e:
+            logger.warning(f"Failed to register persistent views: {e}")
+        
         logger.info("Syncing slash commands globally...")
         await self.tree.sync()
         logger.info("Global slash commands synced successfully!")
