@@ -226,45 +226,136 @@ class Creator(commands.Cog):
         name="global-say", 
         description="[Creator] Broadcast an announcement to all configured server channels."
     )
-    @CreatorOnly()  
-    @app_commands.describe(message="The message or announcement content to broadcast everywhere")
-    async def global_say(self, interaction: discord.Interaction, message: str):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=20.0) as conn:
-                rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
-        except Exception:
-            await interaction.followup.send("❌ **Database connection timeout.** Could not fetch announcement channels. Check your DATABASE_URL.", ephemeral=True)
-            return
-        if not rows:
-            await interaction.followup.send(
-                "❌ No servers have configured a global announcement channel using `/global-announcement-setup` yet.",
-                ephemeral=True
-            )
-            return
-        success_count = 0
-        fail_count = 0
-        for row in rows:
-            channel_id = int(row['announcement_channel_id'])
-            channel = self.bot.get_channel(channel_id)
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(channel_id)
-                except Exception:
-                    fail_count += 1
-                    continue
-            try:
-                await channel.send(message)
-                success_count += 1
-            except Exception:
-                fail_count += 1
+    @CreatorOnly()
+@app_commands.describe(
+    message="The message or announcement content to broadcast everywhere"
+)
+async def global_say(
+    self,
+    interaction: discord.Interaction,
+    message: str
+):
+    # Acknowledge the interaction immediately
+    await interaction.response.defer(ephemeral=True)
+
+    # Fetch all configured announcement channels
+    try:
+        async with asyncio.timeout(10):
+            async with self.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT announcement_channel_id FROM server_settings"
+                )
+
+    except TimeoutError:
         await interaction.followup.send(
-            f"📢 **Global Announcement Dispatched!**\n"
-            f"✅ Sent successfully to **{success_count}** channel(s).\n"
-            f"❌ Failed/Skipped **{fail_count}** channel(s).",
+            "❌ **Database connection timeout.** "
+            "Could not fetch announcement channels.",
             ephemeral=True
         )
+        return
 
+    except Exception as e:
+        print(f"[global_say] Database error: {e}")
+
+        await interaction.followup.send(
+            "❌ **Database error.** "
+            "Could not fetch announcement channels.",
+            ephemeral=True
+        )
+        return
+
+    # No configured channels
+    if not rows:
+        await interaction.followup.send(
+            "❌ No servers have configured a global announcement channel "
+            "using `/global-announcement-setup` yet.",
+            ephemeral=True
+        )
+        return
+
+    success_count = 0
+    fail_count = 0
+
+    # Send the announcement to every configured channel
+    for row in rows:
+        try:
+            channel_id = int(row["announcement_channel_id"])
+        except (TypeError, ValueError):
+            fail_count += 1
+            continue
+
+        # Try cache first
+        channel = self.bot.get_channel(channel_id)
+
+        # If not cached, fetch it from Discord
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except discord.NotFound:
+                print(
+                    f"[global_say] Channel {channel_id} no longer exists."
+                )
+                fail_count += 1
+                continue
+
+            except discord.Forbidden:
+                print(
+                    f"[global_say] No permission to access channel "
+                    f"{channel_id}."
+                )
+                fail_count += 1
+                continue
+
+            except discord.HTTPException as e:
+                print(
+                    f"[global_say] Failed to fetch channel "
+                    f"{channel_id}: {e}"
+                )
+                fail_count += 1
+                continue
+
+            except Exception as e:
+                print(
+                    f"[global_say] Unexpected error fetching "
+                    f"{channel_id}: {e}"
+                )
+                fail_count += 1
+                continue
+
+        # Send announcement
+        try:
+            await channel.send(message)
+            success_count += 1
+
+        except discord.Forbidden:
+            print(
+                f"[global_say] No permission to send in channel "
+                f"{channel_id}."
+            )
+            fail_count += 1
+
+        except discord.HTTPException as e:
+            print(
+                f"[global_say] Discord API error sending to "
+                f"{channel_id}: {e}"
+            )
+            fail_count += 1
+
+        except Exception as e:
+            print(
+                f"[global_say] Unexpected error sending to "
+                f"{channel_id}: {e}"
+            )
+            fail_count += 1
+
+    # Final result
+    await interaction.followup.send(
+        f"📢 **Global Announcement Dispatched!**\n"
+        f"✅ Sent successfully to **{success_count}** channel(s).\n"
+        f"❌ Failed/Skipped **{fail_count}** channel(s).",
+        ephemeral=True
+    )
+    
     @app_commands.command(name="dev-shell", description="[Creator] Execute a shell command.")
     @CreatorOnly()
     @app_commands.describe(command="Shell command to run")
