@@ -339,7 +339,7 @@ class Action(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="leaderboard-global", description="Show the top richest users globally.")
-        @app_commands.command(name="leaderboard-global", description="Show the top richest users globally.")
+    @app_commands.command(name="leaderboard-global", description="Show the top richest users globally.")
     
     async def leaderboard_global(self, interaction: discord.Interaction):
         """Global leaderboard."""
