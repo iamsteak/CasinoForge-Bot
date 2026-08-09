@@ -265,7 +265,7 @@ class Action(commands.Cog):
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE users SET wallet = wallet + $1, last_work = $2 WHERE user_id = $3",
-                    earnings, datetime.now(timezone.utc), str(interaction.user.id)
+                    earnings, datetime.now(), str(interaction.user.id)
                 )
             
             await interaction.followup.send(
