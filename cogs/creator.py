@@ -227,135 +227,44 @@ class Creator(commands.Cog):
         description="[Creator] Broadcast an announcement to all configured server channels."
     )
     @CreatorOnly()
-@app_commands.describe(
-    message="The message or announcement content to broadcast everywhere"
-)
-async def global_say(
-    self,
-    interaction: discord.Interaction,
-    message: str
-):
-    # Acknowledge the interaction immediately
-    await interaction.response.defer(ephemeral=True)
-
-    # Fetch all configured announcement channels
-    try:
-        async with asyncio.timeout(10):
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT announcement_channel_id FROM server_settings"
-                )
-
-    except TimeoutError:
-        await interaction.followup.send(
-            "❌ **Database connection timeout.** "
-            "Could not fetch announcement channels.",
-            ephemeral=True
-        )
-        return
-
-    except Exception as e:
-        print(f"[global_say] Database error: {e}")
-
-        await interaction.followup.send(
-            "❌ **Database error.** "
-            "Could not fetch announcement channels.",
-            ephemeral=True
-        )
-        return
-
-    # No configured channels
-    if not rows:
-        await interaction.followup.send(
-            "❌ No servers have configured a global announcement channel "
-            "using `/global-announcement-setup` yet.",
-            ephemeral=True
-        )
-        return
-
-    success_count = 0
-    fail_count = 0
-
-    # Send the announcement to every configured channel
-    for row in rows:
+    @app_commands.describe(message="The message or announcement content to broadcast everywhere")
+    async def global_say(self, interaction: discord.Interaction, message: str):
+        await interaction.response.defer(ephemeral=True)
         try:
-            channel_id = int(row["announcement_channel_id"])
-        except (TypeError, ValueError):
-            fail_count += 1
-            continue
-
-        # Try cache first
-        channel = self.bot.get_channel(channel_id)
-
-        # If not cached, fetch it from Discord
-        if channel is None:
+            async with asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0) as conn:
+                rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
+        except Exception:
+            await interaction.followup.send("❌ **Database connection timeout.** Could not fetch announcement channels. Check your DATABASE_URL.", ephemeral=True)
+            return
+        if not rows:
+            await interaction.followup.send(
+                "❌ No servers have configured a global announcement channel using `/global-announcement-setup` yet.",
+                ephemeral=True
+            )
+            return
+        success_count = 0
+        fail_count = 0
+        for row in rows:
+            channel_id = int(row['announcement_channel_id'])
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except Exception:
+                    fail_count += 1
+                    continue
             try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except discord.NotFound:
-                print(
-                    f"[global_say] Channel {channel_id} no longer exists."
-                )
+                await channel.send(message)
+                success_count += 1
+            except Exception:
                 fail_count += 1
-                continue
+        await interaction.followup.send(
+            f"📢 **Global Announcement Dispatched!**\n"
+            f"✅ Sent successfully to **{success_count}** channel(s).\n"
+            f"❌ Failed/Skipped **{fail_count}** channel(s).",
+            ephemeral=True
+        )
 
-            except discord.Forbidden:
-                print(
-                    f"[global_say] No permission to access channel "
-                    f"{channel_id}."
-                )
-                fail_count += 1
-                continue
-
-            except discord.HTTPException as e:
-                print(
-                    f"[global_say] Failed to fetch channel "
-                    f"{channel_id}: {e}"
-                )
-                fail_count += 1
-                continue
-
-            except Exception as e:
-                print(
-                    f"[global_say] Unexpected error fetching "
-                    f"{channel_id}: {e}"
-                )
-                fail_count += 1
-                continue
-
-        # Send announcement
-        try:
-            await channel.send(message)
-            success_count += 1
-
-        except discord.Forbidden:
-            print(
-                f"[global_say] No permission to send in channel "
-                f"{channel_id}."
-            )
-            fail_count += 1
-
-        except discord.HTTPException as e:
-            print(
-                f"[global_say] Discord API error sending to "
-                f"{channel_id}: {e}"
-            )
-            fail_count += 1
-
-        except Exception as e:
-            print(
-                f"[global_say] Unexpected error sending to "
-                f"{channel_id}: {e}"
-            )
-            fail_count += 1
-
-    # Final result
-    await interaction.followup.send(
-        f"📢 **Global Announcement Dispatched!**\n"
-        f"✅ Sent successfully to **{success_count}** channel(s).\n"
-        f"❌ Failed/Skipped **{fail_count}** channel(s).",
-        ephemeral=True
-    )
-    
     @app_commands.command(name="dev-shell", description="[Creator] Execute a shell command.")
     @CreatorOnly()
     @app_commands.describe(command="Shell command to run")
@@ -485,6 +394,28 @@ async def global_say(
                 ephemeral=True
             )
 
+    @app_commands.command(name="dev-multiplier", description="[Creator] Set a global multiplier for all income and gambling payouts.")
+    @CreatorOnly()
+    @app_commands.describe(multiplier="Multiplier amount (e.g. 1.5 for 1.5x)")
+    async def dev_multiplier(self, interaction: discord.Interaction, multiplier: float):
+        """Set the global income/gambling multiplier."""
+        if multiplier < 0.1 or multiplier > 10.0:
+            return await interaction.response.send_message("❌ Multiplier must be between 0.1 and 10.0.", ephemeral=True)
+        
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('global_multiplier', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+                str(multiplier)
+            )
+        
+        self.bot.global_multiplier = multiplier
+        
+        await interaction.response.send_message(
+            f"✅ Global multiplier set to **{multiplier}x**. All income and gambling payouts will be multiplied by this amount. Set to **1.0** to reset to normal.",
+            ephemeral=True
+        )
+        logger.info(f"Global multiplier set to {multiplier}x by {interaction.user.id}")
+
 
 class DevGiftView(discord.ui.View):
     def __init__(self, db_pool, bot, dev_user, target_user, amount):
@@ -534,29 +465,6 @@ class DevGiftView(discord.ui.View):
         except Exception as e:
             logger.error(f"Failed to claim dev gift: {e}")
             await interaction.followup.send(f"❌ Failed to claim gift. Please try again or contact support.\nError: `{e}`", ephemeral=True)
-
-
-    @app_commands.command(name="dev-multiplier", description="[Creator] Set a global multiplier for all income and gambling payouts.")
-    @CreatorOnly()
-    @app_commands.describe(multiplier="Multiplier amount (e.g. 1.5 for 1.5x)")
-    async def dev_multiplier(self, interaction: discord.Interaction, multiplier: float):
-        """Set the global income/gambling multiplier."""
-        if multiplier < 0.1 or multiplier > 10.0:
-            return await interaction.response.send_message("❌ Multiplier must be between 0.1 and 10.0.", ephemeral=True)
-        
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO settings (key, value) VALUES ('global_multiplier', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
-                str(multiplier)
-            )
-        
-        self.bot.global_multiplier = multiplier
-        
-        await interaction.response.send_message(
-            f"✅ Global multiplier set to **{multiplier}x**. All income and gambling payouts will be multiplied by this amount. Set to **1.0** to reset to normal.",
-            ephemeral=True
-        )
-        logger.info(f"Global multiplier set to {multiplier}x by {interaction.user.id}")
 
 
 async def setup(bot: commands.Bot):
