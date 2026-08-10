@@ -12,6 +12,10 @@ import asyncio
 import logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
+
+# Load environment variables from .env (harmless on Wispbyte; useful for local dev)
+load_dotenv()
 
 # In-memory log buffer for Wispbyte compatibility (no file logging)
 log_buffer = deque(maxlen=100)
@@ -81,7 +85,9 @@ class CasinoForge(commands.Bot):
         # Register persistent views so buttons keep working after bot restart
         try:
             from cogs.creator import DevGiftView
-            self.add_view(DevGiftView(self.db_pool, self, discord.Object(id=0), discord.Object(id=0), 0))
+            # DevGiftView now accepts None placeholders for startup registration.
+            # Persistent views are registered so button callbacks remain active.
+            self.add_view(DevGiftView(self.db_pool, self, None, None, 0))
             logger.info("Registered persistent views (DevGiftView)")
         except Exception as e:
             logger.warning(f"Failed to register persistent views: {e}")
