@@ -233,11 +233,10 @@ class Creator(commands.Cog):
         
         rows = []
         try:
-            conn = await asyncio.wait_for(self.bot.db_pool.acquire(), timeout=10.0)
-            async with conn:
+            async with self.bot.db_pool.acquire() as conn:
                 rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
         except Exception as e:
-            logger.error(f"Global say DB error: {e}")
+            logger.error(f"Global say DB error: {e}", exc_info=True)
             await interaction.followup.send(f"❌ **Database Error:** `{e}`\nCheck if `server_settings` table exists or DATABASE_URL is valid.", ephemeral=True)
             return
 
