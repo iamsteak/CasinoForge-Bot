@@ -60,6 +60,101 @@ class CasinoForge(commands.Bot):
         self.global_multiplier = 1.0
 
     async def setup_hook(self):
+        # Auto-initialize database tables if not exist
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        user_id TEXT PRIMARY KEY,
+                        wallet BIGINT DEFAULT 0,
+                        bank BIGINT DEFAULT 0,
+                        bank_limit BIGINT DEFAULT 5000,
+                        is_frozen BOOLEAN DEFAULT FALSE,
+                        is_blacklisted BOOLEAN DEFAULT FALSE,
+                        last_daily TIMESTAMP,
+                        last_work TIMESTAMP
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS jackpot (
+                        id SERIAL PRIMARY KEY,
+                        end_time TIMESTAMP NOT NULL,
+                        total_prize BIGINT DEFAULT 0,
+                        is_active BOOLEAN DEFAULT TRUE
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS jackpot_tickets (
+                        id SERIAL PRIMARY KEY,
+                        jackpot_id INTEGER REFERENCES jackpot(id),
+                        user_id TEXT REFERENCES users(user_id),
+                        ticket_count INTEGER DEFAULT 0,
+                        UNIQUE(jackpot_id, user_id)
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS items (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT UNIQUE,
+                        description TEXT,
+                        price BIGINT,
+                        type TEXT
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS inventory (
+                        user_id TEXT REFERENCES users(user_id),
+                        item_id INTEGER REFERENCES items(id),
+                        quantity INTEGER DEFAULT 1,
+                        PRIMARY KEY (user_id, item_id)
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS eco_logs (
+                        id SERIAL PRIMARY KEY,
+                        staff_id TEXT,
+                        target_id TEXT,
+                        action TEXT,
+                        amount BIGINT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS investments (
+                        user_id TEXT,
+                        ticker TEXT,
+                        shares BIGINT DEFAULT 0,
+                        PRIMARY KEY (user_id, ticker)
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS server_settings (
+                        guild_id TEXT PRIMARY KEY,
+                        announcement_channel_id TEXT
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS transaction_log (
+                        id SERIAL PRIMARY KEY,
+                        user_id TEXT,
+                        guild_id TEXT,
+                        action TEXT,
+                        amount BIGINT,
+                        game TEXT,
+                        result TEXT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                """)
+                logger.info("Database tables verified/initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize database tables: {e}")
+
         # Load global multiplier from DB
         try:
             async with self.db_pool.acquire() as conn:
@@ -203,7 +298,12 @@ async def main():
 
     logger.info("Initializing database connection pool...")
     try:
-        pool = await asyncpg.create_pool(DATABASE_URL, command_timeout=30)
+        pool = await asyncpg.create_pool(
+            DATABASE_URL, 
+            command_timeout=30, 
+            max_inactive_connection_lifetime=300,
+            statement_cache_size=0
+        )
         logger.info("Connected to PostgreSQL flawlessly.")
     except Exception as e:
         logger.error(f"FATAL DATABASE ERROR: Could not connect to Database: {e}")
