@@ -233,8 +233,15 @@ class Creator(commands.Cog):
         
         rows = []
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
+            async with asyncio.timeout(10):
+                async with self.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
+        except TimeoutError:
+            await interaction.followup.send(
+                "❌ The database took too long to respond. Please try again.",
+                ephemeral=True,
+            )
+            return
         except Exception as e:
             print(f"[GLOBAL-SAY DB ERROR]: {e}")
             logger.error(f"Global say DB error: {e}", exc_info=True)
@@ -255,14 +262,23 @@ class Creator(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 try:
-                    channel = await self.bot.fetch_channel(channel_id)
+                    async with asyncio.timeout(10):
+                        channel = await self.bot.fetch_channel(channel_id)
+                except TimeoutError:
+                    logger.warning("Global-say timed out fetching channel %s", channel_id)
+                    fail_count += 1
+                    continue
                 except Exception as ex_fetch:
                     print(f"[GLOBAL-SAY FETCH CHANNEL ERROR] Channel ID {channel_id}: {ex_fetch}")
                     fail_count += 1
                     continue
             try:
-                await channel.send(message)
+                async with asyncio.timeout(10):
+                    await channel.send(message)
                 success_count += 1
+            except TimeoutError:
+                logger.warning("Global-say timed out sending to channel %s", channel_id)
+                fail_count += 1
             except Exception as ex_send:
                 print(f"[GLOBAL-SAY SEND ERROR] Channel ID {channel_id}: {ex_send}")
                 fail_count += 1
