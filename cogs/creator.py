@@ -236,6 +236,7 @@ class Creator(commands.Cog):
             async with self.bot.db_pool.acquire() as conn:
                 rows = await conn.fetch("SELECT announcement_channel_id FROM server_settings")
         except Exception as e:
+            print(f"[GLOBAL-SAY DB ERROR]: {e}")
             logger.error(f"Global say DB error: {e}", exc_info=True)
             await interaction.followup.send(f"❌ **Database Error:** `{e}`\nCheck if `server_settings` table exists or DATABASE_URL is valid.", ephemeral=True)
             return
@@ -255,13 +256,15 @@ class Creator(commands.Cog):
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
-                except Exception:
+                except Exception as ex_fetch:
+                    print(f"[GLOBAL-SAY FETCH CHANNEL ERROR] Channel ID {channel_id}: {ex_fetch}")
                     fail_count += 1
                     continue
             try:
                 await channel.send(message)
                 success_count += 1
-            except Exception:
+            except Exception as ex_send:
+                print(f"[GLOBAL-SAY SEND ERROR] Channel ID {channel_id}: {ex_send}")
                 fail_count += 1
 
         await interaction.followup.send(
