@@ -258,7 +258,16 @@ class Creator(commands.Cog):
         success_count = 0
         fail_count = 0
         for row in rows:
-            channel_id = int(row['announcement_channel_id'])
+            raw_channel_id = row.get('announcement_channel_id') if hasattr(row, 'get') else row['announcement_channel_id']
+            try:
+                channel_id = int(str(raw_channel_id).strip())
+                if channel_id <= 0:
+                    raise ValueError("channel ID must be positive")
+            except (TypeError, ValueError):
+                logger.warning("Global-say skipped invalid channel ID: %r", raw_channel_id)
+                fail_count += 1
+                continue
+
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 try:

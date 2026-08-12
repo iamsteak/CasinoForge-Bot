@@ -73,6 +73,36 @@ class RoleNicknames(commands.Cog):
         except (discord.Forbidden, discord.HTTPException) as exc:
             logger.warning("Failed to update nickname for %s in %s: %s", member.id, member.guild.id, exc)
 
+    @discord.app_commands.command(name="name-sync", description="Update role-emoji names for everyone in this server.")
+    async def name_sync(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id != OFFICIAL_GUILD_ID:
+            await interaction.response.send_message(
+                "❌ This command only works in the official server.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send("❌ This command must be used in a server.", ephemeral=True)
+            return
+
+        updated = 0
+        skipped = 0
+        for member in guild.members:
+            before = member.nick
+            await self.update_member_nickname(member)
+            if member.nick != before:
+                updated += 1
+            else:
+                skipped += 1
+
+        await interaction.followup.send(
+            f"✅ Name sync complete. Updated **{updated}** member(s); skipped **{skipped}**.",
+            ephemeral=True,
+        )
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
         await self.update_member_nickname(member)
