@@ -11,7 +11,7 @@ import asyncio
 import logging
 import sys
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger('CasinoForge.Creator')
 
@@ -451,6 +451,35 @@ class Creator(commands.Cog):
         )
         logger.info(f"Global multiplier set to {multiplier}x by {interaction.user.id}")
 
+    @app_commands.command(name="dev-block", description="[Creator] Timeout a user for a set number of minutes.")
+    @CreatorOnly()
+    @app_commands.describe(user="The user to timeout", minutes="How many minutes to timeout them for")
+    async def dev_block(self, interaction: discord.Interaction, user: discord.Member, minutes: int):
+        """Developer: Timeout a member for X minutes."""
+        if minutes <= 0:
+            return await interaction.response.send_message("❌ Minutes must be a positive number.", ephemeral=True)
+
+        if minutes > 40320:  # Discord's max timeout is 28 days
+            return await interaction.response.send_message("❌ Max timeout is 28 days (40320 minutes).", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            duration = discord.utils.utcnow() + timedelta(minutes=minutes)
+            await user.timeout(duration, reason=f"Dev-block by {interaction.user} ({interaction.user.id})")
+
+            await interaction.followup.send(
+                f"🔇 **{user.display_name}** has been timed out for **{minutes}** minute(s).",
+                ephemeral=True
+            )
+            logger.info(f"Dev-block: {user.id} timed out for {minutes}min by {interaction.user.id}")
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to timeout this user (check my role position).",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ **Error:**\n```py\n{e}\n```", ephemeral=True)
 
 class DevGiftView(discord.ui.View):
     def __init__(self, db_pool, bot, dev_user, target_user, amount):
