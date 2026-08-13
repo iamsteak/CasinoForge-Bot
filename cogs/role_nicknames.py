@@ -1,6 +1,8 @@
 import logging
+import unicodedata
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 logger = logging.getLogger("CasinoForge.role_nicknames")
@@ -8,15 +10,40 @@ MAX_NICKNAME_LENGTH = 32
 OFFICIAL_GUILD_ID = 1525859383127441620
 
 
+def leading_emoji(text: str) -> str | None:
+    """Extract a leading Unicode emoji/symbol from a role name."""
+    text = text.lstrip()
+    if not text:
+        return None
+
+    first = text[0]
+    category = unicodedata.category(first)
+    if not (category.startswith("So") or category.startswith("Sk")):
+        return None
+
+    result = [first]
+    index = 1
+    while index < len(text):
+        char = text[index]
+        codepoint = ord(char)
+        category = unicodedata.category(char)
+        if codepoint in (0xFE0E, 0xFE0F, 0x200D) or category in {"Mn", "Mc"} or 0x1F3FB <= codepoint <= 0x1F3FF:
+            result.append(char)
+            index += 1
+            continue
+        break
+    return "".join(result)
+
+
 def get_role_emoji(member: discord.Member) -> str | None:
-    """Return the emoji from the highest-ranked role that has one."""
+    """Return the emoji from the highest-ranked emoji-bearing role."""
     for role in reversed(member.roles):
-        emoji = getattr(role, "unicode_emoji", None)
-        if emoji:
-            return emoji
-        emoji = getattr(role, "emoji", None)
-        if emoji:
-            return str(emoji)
+        role_emoji = getattr(role, "unicode_emoji", None)
+        if role_emoji:
+            return str(role_emoji)
+        role_emoji = leading_emoji(role.name)
+        if role_emoji:
+            return role_emoji
     return None
 
 
@@ -55,31 +82,35 @@ class RoleNicknames(commands.Cog):
             for member in guild.members:
                 await self.update_member_nickname(member)
 
-    async def update_member_nickname(self, member: discord.Member) -> None:
-        if member.guild.id != OFFICIAL_GUILD_ID or member.bot:
-            return
+    async def update_member_nickname(self, member: discord.Member) -> str:
+        if member.guild.id != OFFICIAL_GUILD_ID:
+            return "wrong_server"
+        if member.bot:
+            return "bot"
         if not member.guild.me or not member.guild.me.guild_permissions.manage_nicknames:
-            return
+            return "missing_permission"
         if member.top_role >= member.guild.me.top_role:
-            logger.warning("Cannot update nickname for %s in %s: role hierarchy prevents it.", member.id, member.guild.id)
-            return
+            logger.warning("Cannot update nickname for %s: target role is not below the bot role.", member.id)
+            return "role_hierarchy"
 
         new_nickname = build_nickname(member)
         if member.nick == new_nickname:
-            return
+            return "unchanged"
 
         try:
             await member.edit(nick=new_nickname, reason="Synchronize highest emoji role nickname")
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            logger.warning("Failed to update nickname for %s in %s: %s", member.id, member.guild.id, exc)
+            return "updated"
+        except discord.Forbidden:
+            logger.warning("Discord denied nickname update for member %s.", member.id)
+            return "forbidden"
+        except discord.HTTPException as exc:
+            logger.warning("Nickname update failed for member %s: %s", member.id, exc)
+            return "api_error"
 
-    @discord.app_commands.command(name="name-sync", description="Update role-emoji names for everyone in this server.")
+    @app_commands.command(name="name-sync", description="Update role-emoji names for everyone in this server.")
     async def name_sync(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id != OFFICIAL_GUILD_ID:
-            await interaction.response.send_message(
-                "❌ This command only works in the official server.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("❌ This command only works in the official server.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -88,18 +119,18 @@ class RoleNicknames(commands.Cog):
             await interaction.followup.send("❌ This command must be used in a server.", ephemeral=True)
             return
 
-        updated = 0
-        skipped = 0
-        for member in guild.members:
-            before = member.nick
-            await self.update_member_nickname(member)
-            if member.nick != before:
-                updated += 1
-            else:
-                skipped += 1
+        # Fetch the current member list instead of relying only on the local cache.
+        members = [member async for member in guild.fetch_members(limit=None)]
+        counts = {key: 0 for key in ("updated", "unchanged", "bot", "missing_permission", "role_hierarchy", "forbidden", "api_error")}
+        for member in members:
+            result = await self.update_member_nickname(member)
+            counts[result] = counts.get(result, 0) + 1
 
         await interaction.followup.send(
-            f"✅ Name sync complete. Updated **{updated}** member(s); skipped **{skipped}**.",
+            "✅ **Name sync complete.**\n"
+            f"Updated: **{counts['updated']}** | Already correct: **{counts['unchanged']}**\n"
+            f"No emoji role/bot: **{counts['bot']}** | Role hierarchy: **{counts['role_hierarchy']}**\n"
+            f"Permission/API failures: **{counts['missing_permission'] + counts['forbidden'] + counts['api_error']}**",
             ephemeral=True,
         )
 
