@@ -42,6 +42,10 @@ root_logger.addHandler(memory_handler)
 
 logger = logging.getLogger('CasinoForge')
 
+OFFICIAL_GUILD_ID = 1525859383127441620
+COMMAND_LOG_CHANNEL_ID = 1537608487306272788
+DM_LOG_CHANNEL_ID = 1537608554809135104
+
 class CasinoForge(commands.Bot):
     def __init__(self, db_pool: asyncpg.Pool, creator_ids: list[int]):
         intents = discord.Intents.default()
@@ -197,6 +201,73 @@ class CasinoForge(commands.Bot):
     async def on_ready(self):
         logger.info(f"Bot Online! Logged in as {self.user.name} (ID: {self.user.id})")
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.playing, name="High Stakes | /help"))
+
+    async def _send_log_embed(self, channel_id: int, embed: discord.Embed) -> None:
+        """Send an internal audit embed without allowing logging to affect bot behavior."""
+        try:
+            channel = self.get_channel(channel_id)
+            if channel is None:
+                channel = await self.fetch_channel(channel_id)
+            await asyncio.wait_for(channel.send(embed=embed), timeout=10)
+        except Exception as exc:
+            logger.warning("Could not send audit log to channel %s: %s", channel_id, exc)
+
+    @staticmethod
+    def _user_fields(user: discord.abc.User) -> list[tuple[str, str, bool]]:
+        return [
+            ("Display name", discord.utils.escape_markdown(user.display_name)[:256], True),
+            ("Username", discord.utils.escape_markdown(str(user))[:256], True),
+            ("User ID", str(user.id), True),
+        ]
+
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Log application commands used outside the official server."""
+        if interaction.type != discord.InteractionType.application_command:
+            return
+        if interaction.guild is None or interaction.guild.id == OFFICIAL_GUILD_ID:
+            return
+
+        command_name = str(interaction.data.get("name", "unknown"))
+        option_names = []
+        for option in interaction.data.get("options", []):
+            if isinstance(option, dict) and option.get("name"):
+                option_names.append(str(option["name"]))
+
+        embed = discord.Embed(
+            title="Command Activity",
+            description=f"**{interaction.guild.name}** (ID: `{interaction.guild.id}`)",
+            color=discord.Color.blurple(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        for name, value, inline in self._user_fields(interaction.user):
+            embed.add_field(name=name, value=value, inline=inline)
+        embed.add_field(name="Main", value=f"{interaction.user.mention} used `/{command_name}`", inline=False)
+        embed.add_field(name="Channel", value=f"{getattr(interaction.channel, 'mention', 'Unknown')} (ID: `{getattr(interaction.channel, 'id', 'unknown')}`)", inline=False)
+        embed.add_field(name="Details", value=f"Option names: `{', '.join(option_names) if option_names else 'none'}`", inline=False)
+        embed.set_footer(text="Important: command used outside the official server")
+        asyncio.create_task(self._send_log_embed(COMMAND_LOG_CHANNEL_ID, embed))
+
+        # Keep Discord.py's normal application-command dispatch intact.
+        await super().on_interaction(interaction)
+
+    async def on_message(self, message: discord.Message) -> None:
+        """Log direct messages to the bot without storing raw message content."""
+        if message.author.bot:
+            return
+        if message.guild is None:
+            embed = discord.Embed(
+                title="Direct Message Received",
+                description="A user sent a direct message to the bot.",
+                color=discord.Color.orange(),
+                timestamp=datetime.now(timezone.utc),
+            )
+            for name, value, inline in self._user_fields(message.author):
+                embed.add_field(name=name, value=value, inline=inline)
+            embed.add_field(name="Main", value=f"{message.author.mention} sent a DM", inline=False)
+            embed.add_field(name="Details", value=f"Message length: `{len(message.content)}` characters\nAttachments: `{len(message.attachments)}`", inline=False)
+            embed.set_footer(text="Important: direct-message content is intentionally not included")
+            asyncio.create_task(self._send_log_embed(DM_LOG_CHANNEL_ID, embed))
+        await self.process_commands(message)
 
     @tasks.loop(minutes=5)
     async def jackpot_checker(self):
