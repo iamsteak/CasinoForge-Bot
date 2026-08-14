@@ -220,11 +220,16 @@ class CasinoForge(commands.Bot):
             ("User ID", str(user.id), True),
         ]
 
+    @staticmethod
+    def _truncate_log_text(value: str, limit: int = 1000) -> str:
+        value = value or "[empty message]"
+        if len(value) <= limit:
+            return value
+        return f"{value[:limit - 20]}\\n...[truncated]"
+
     async def on_interaction(self, interaction: discord.Interaction) -> None:
-        """Log application commands used outside the official server."""
-        if interaction.type != discord.InteractionType.application_command:
-            return
-        if interaction.guild is None or interaction.guild.id == OFFICIAL_GUILD_ID:
+        """Log application commands used in every server where the bot is installed."""
+        if interaction.type != discord.InteractionType.application_command or interaction.guild is None:
             return
 
         command_name = str(interaction.data.get("name", "unknown"))
@@ -244,14 +249,15 @@ class CasinoForge(commands.Bot):
         embed.add_field(name="Main", value=f"{interaction.user.mention} used `/{command_name}`", inline=False)
         embed.add_field(name="Channel", value=f"{getattr(interaction.channel, 'mention', 'Unknown')} (ID: `{getattr(interaction.channel, 'id', 'unknown')}`)", inline=False)
         embed.add_field(name="Details", value=f"Option names: `{', '.join(option_names) if option_names else 'none'}`", inline=False)
-        embed.set_footer(text="Important: command used outside the official server")
+        server_scope = "official server" if interaction.guild.id == OFFICIAL_GUILD_ID else "external server"
+        embed.set_footer(text=f"Important: command activity logged from the {server_scope}")
         asyncio.create_task(self._send_log_embed(COMMAND_LOG_CHANNEL_ID, embed))
 
         # Keep Discord.py's normal application-command dispatch intact.
         await super().on_interaction(interaction)
 
     async def on_message(self, message: discord.Message) -> None:
-        """Log direct messages to the bot without storing raw message content."""
+        """Log direct messages to the bot, including safely truncated message content."""
         if message.author.bot:
             return
         if message.guild is None:
@@ -264,8 +270,9 @@ class CasinoForge(commands.Bot):
             for name, value, inline in self._user_fields(message.author):
                 embed.add_field(name=name, value=value, inline=inline)
             embed.add_field(name="Main", value=f"{message.author.mention} sent a DM", inline=False)
+            embed.add_field(name="Message", value=f"```text\n{self._truncate_log_text(message.content)}\n```", inline=False)
             embed.add_field(name="Details", value=f"Message length: `{len(message.content)}` characters\nAttachments: `{len(message.attachments)}`", inline=False)
-            embed.set_footer(text="Important: direct-message content is intentionally not included")
+            embed.set_footer(text="Important: DM content included by logging configuration")
             asyncio.create_task(self._send_log_embed(DM_LOG_CHANNEL_ID, embed))
         await self.process_commands(message)
 
