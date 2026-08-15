@@ -481,10 +481,40 @@ async def main():
 
     async with pool:
         bot = CasinoForge(db_pool=pool, creator_ids=CREATOR_IDS)
-        await bot.start(TOKEN)
+        # Retry login with exponential backoff to survive Discord/Cloudflare
+        # rate limits (HTTP 429) and temporary IP bans (Cloudflare error 1015)
+        # that frequently affect shared hosting node IPs. Without this, any
+        # 429 at startup crashes the whole process.
+        max_retries = 6
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"Attempting to log in to Discord (attempt {attempt}/{max_retries})...")
+                await bot.start(TOKEN)
+                break  # bot.run() / bot.start() blocks until disconnect; exit the retry loop on clean shutdown
+            except discord.HTTPException as e:
+                retry_delay = 20 * (2 ** (attempt - 1))  # 20s, 40s, 80s, ...
+                if hasattr(e, "response") and e.response is not None and e.response.status == 429:
+                    # Honor Discord's Retry-After header when present (default to exponential backoff)
+                    retry_after = e.response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            retry_delay = max(retry_delay, float(retry_after))
+                        except ValueError:
+                            pass
+                logger.warning(
+                    f"Discord login failed (HTTP {e.response.status if e.response is not None else 'unknown'}): "
+                    f"{e}. Retrying in {retry_delay:.0f} seconds... "
+                    "(Often caused by Cloudflare rate-limiting the host node's IP — this is usually temporary.)"
+                )
+                await asyncio.sleep(retry_delay)
+        else:
+            logger.error("Exhausted all login retries. The hosting node's IP is likely being rate-limited or "
+                         "blocked by Cloudflare for discord.com. Wait a while before restarting.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot manually shut down.")
+    except Exception as e:
+        logger.exception(f"Unexpected fatal error during startup: {e}")
