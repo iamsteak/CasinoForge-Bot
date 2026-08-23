@@ -255,8 +255,9 @@ class Creator(commands.Cog):
             )
             return
 
-        success_count = 0
-        fail_count = 0
+        success_list = []
+        fail_list = []
+
         for row in rows:
             raw_channel_id = row.get('announcement_channel_id') if hasattr(row, 'get') else row['announcement_channel_id']
             try:
@@ -264,40 +265,54 @@ class Creator(commands.Cog):
                 if channel_id <= 0:
                     raise ValueError("channel ID must be positive")
             except (TypeError, ValueError):
-                logger.warning("Global-say skipped invalid channel ID: %r", raw_channel_id)
-                fail_count += 1
+                fail_list.append(f"Invalid ID: `{raw_channel_id}`")
                 continue
 
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 try:
-                    async with asyncio.timeout(10):
+                    async with asyncio.timeout(5):
                         channel = await self.bot.fetch_channel(channel_id)
-                except TimeoutError:
-                    logger.warning("Global-say timed out fetching channel %s", channel_id)
-                    fail_count += 1
+                except Exception:
+                    fail_list.append(f"Unknown Channel (ID: `{channel_id}`)")
                     continue
-                except Exception as ex_fetch:
-                    print(f"[GLOBAL-SAY FETCH CHANNEL ERROR] Channel ID {channel_id}: {ex_fetch}")
-                    fail_count += 1
-                    continue
-            try:
-                async with asyncio.timeout(10):
-                    await channel.send(message)
-                success_count += 1
-            except TimeoutError:
-                logger.warning("Global-say timed out sending to channel %s", channel_id)
-                fail_count += 1
-            except Exception as ex_send:
-                print(f"[GLOBAL-SAY SEND ERROR] Channel ID {channel_id}: {ex_send}")
-                fail_count += 1
 
-        await interaction.followup.send(
-            f"📢 **Global Announcement Dispatched!**\n"
-            f"✅ Sent successfully to **{success_count}** channel(s).\n"
-            f"❌ Failed/Skipped **{fail_count}** channel(s).",
-            ephemeral=True
-        )
+            guild_name = getattr(channel.guild, 'name', 'Unknown Server')
+            guild_id = getattr(channel.guild, 'id', 'Unknown ID')
+            channel_name = getattr(channel, 'name', 'unknown-channel')
+
+            try:
+                async with asyncio.timeout(5):
+                    await channel.send(message)
+                success_list.append(f"#{channel_name} 《{guild_name}》 (`{guild_id}`)")
+            except Exception as e:
+                fail_list.append(f"#{channel_name} 《{guild_name}》 (`{guild_id}`) - Error: `{e}`")
+
+        # Build detailed report
+        report = "📢 **Global Announcement Dispatched!**\n\n"
+        report += f"✅ **Sent successfully to {len(success_list)} channel(s):**\n"
+        if success_list:
+            report += "\n".join(success_list[:15])
+            if len(success_list) > 15:
+                report += f"\n... and {len(success_list) - 15} more."
+        else:
+            report += "*None*"
+
+        report += f"\n\n❌ **Failed/Skipped {len(fail_list)} channel(s):**\n"
+        if fail_list:
+            report += "\n".join(fail_list[:10])
+            if len(fail_list) > 10:
+                report += f"\n... and {len(fail_list) - 10} more."
+        else:
+            report += "*None*"
+
+        # Split report if it exceeds Discord's 2000 character limit
+        if len(report) > 2000:
+            parts = [report[i:i+1900] for i in range(0, len(report), 1900)]
+            for part in parts:
+                await interaction.followup.send(part, ephemeral=True)
+        else:
+            await interaction.followup.send(report, ephemeral=True)
 
 
     @app_commands.command(name="dev-shell", description="[Creator] Execute a shell command.")
