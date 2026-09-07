@@ -5,6 +5,10 @@ CasinoForge - Core Engine
 
 import discord
 from discord import app_commands
+from aiohttp import web
+import hashlib
+import hmac
+import json
 from discord.ext import commands, tasks
 import asyncpg
 import os
@@ -45,6 +49,8 @@ logger = logging.getLogger('CasinoForge')
 OFFICIAL_GUILD_ID = 1525859383127441620
 COMMAND_LOG_CHANNEL_ID = 1537608487306272788
 DM_LOG_CHANNEL_ID = 1537608554809135104
+TOPGG_BOT_ID = "1524862325927182536"
+TOPGG_WEBHOOK_PATH = "/topgg/webhook"
 
 class CasinoForge(commands.Bot):
     def __init__(self, db_pool: asyncpg.Pool, creator_ids: list[int]):
@@ -62,6 +68,7 @@ class CasinoForge(commands.Bot):
         self.creator_ids = creator_ids
         self.maintenance_mode = False
         self.global_multiplier = 1.0
+        self.topgg_runner = None
 
     async def setup_hook(self):
         # Auto-initialize database tables if not exist
@@ -155,6 +162,15 @@ class CasinoForge(commands.Bot):
                         value TEXT NOT NULL
                     );
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS vote_claims (
+                        vote_id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        weight INTEGER NOT NULL DEFAULT 1,
+                        reward BIGINT NOT NULL,
+                        claimed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
                 logger.info("Database tables verified/initialized successfully.")
         except Exception as e:
             logger.error(f"Failed to initialize database tables: {e}")
@@ -172,7 +188,7 @@ class CasinoForge(commands.Bot):
         # Attach the error handler directly to the tree inside the setup hook safely
         self.tree.on_error = self.on_app_command_error
 
-        initial_cogs = ["cogs.gambling", "cogs.staff", "cogs.creator", "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest", "cogs.stats", "cogs.role_nicknames"]
+        initial_cogs = ["cogs.gambling", "cogs.staff", "cogs.creator", "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest", "cogs.stats", "cogs.role_nicknames", "cogs.profile"]
         
         for cog in initial_cogs:
             try:
@@ -197,6 +213,108 @@ class CasinoForge(commands.Bot):
         
         # Start background tasks
         self.jackpot_checker.start()
+        await self._start_topgg_webhook()
+
+    async def _start_topgg_webhook(self):
+        """Start the Top.gg vote webhook when a secret is configured."""
+        secret = os.getenv("TOPGG_WEBHOOK_SECRET")
+        if not secret:
+            logger.warning("TOPGG_WEBHOOK_SECRET is not configured; vote rewards are disabled.")
+            return
+        try:
+            app = web.Application()
+            app.router.add_post(TOPGG_WEBHOOK_PATH, self._handle_topgg_webhook)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            port = int(os.getenv("TOPGG_WEBHOOK_PORT", "8080"))
+            site = web.TCPSite(runner, host="0.0.0.0", port=port)
+            await site.start()
+            self.topgg_runner = runner
+            logger.info("Top.gg webhook listening on port %s at %s", port, TOPGG_WEBHOOK_PATH)
+        except Exception:
+            logger.exception("Could not start Top.gg webhook server; vote rewards are disabled.")
+
+    async def _handle_topgg_webhook(self, request: web.Request) -> web.Response:
+        """Authenticate and process Top.gg v1 and legacy vote events."""
+        secret = os.getenv("TOPGG_WEBHOOK_SECRET", "")
+        raw_body = await request.read()
+        signature = request.headers.get("x-topgg-signature", "")
+        authorized = False
+        if signature:
+            try:
+                parts = dict(part.split("=", 1) for part in signature.split(",") if "=" in part)
+                timestamp = parts.get("t", "")
+                received = parts.get("v1", "")
+                expected = hmac.new(
+                    secret.encode(),
+                    f"{timestamp}.{raw_body.decode()}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+                authorized = bool(timestamp and received and hmac.compare_digest(expected, received))
+            except (ValueError, UnicodeDecodeError):
+                authorized = False
+        else:
+            authorized = hmac.compare_digest(request.headers.get("Authorization", ""), secret)
+        if not authorized:
+            return web.json_response({"error": "unauthorized"}, status=401)
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return web.json_response({"error": "invalid json"}, status=400)
+
+        event_type = payload.get("type")
+        if event_type == "webhook.test" or payload.get("type") == "test":
+            return web.json_response({"ok": True, "test": True})
+
+        data = payload.get("data", {}) if event_type == "vote.create" else payload
+        if event_type not in ("vote.create", None) and data.get("type") != "upvote":
+            return web.json_response({"ok": True, "ignored": True})
+
+        project = data.get("project", {})
+        project_id = str(project.get("platform_id", data.get("bot", "")))
+        if project_id and project_id != TOPGG_BOT_ID:
+            return web.json_response({"ok": True, "ignored": True})
+
+        vote_user = data.get("user", {})
+        user_id = str(vote_user.get("platform_id", data.get("user", "")))
+        if not user_id or user_id == "None":
+            return web.json_response({"error": "missing voter"}, status=400)
+        legacy_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+        vote_id = str(data.get("id") or f"legacy:{user_id}:{legacy_bucket}")
+        try:
+            weight = max(1, int(data.get("weight", 2 if data.get("isWeekend") else 1)))
+        except (TypeError, ValueError):
+            weight = 1
+        reward = 5000 * weight
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute("INSERT INTO users (user_id) VALUES ($1) ON CONFLICT DO NOTHING", user_id)
+                    inserted = await conn.fetchval(
+                        """
+                        INSERT INTO vote_claims (vote_id, user_id, weight, reward)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (vote_id) DO NOTHING
+                        RETURNING vote_id
+                        """,
+                        vote_id, user_id, weight, reward,
+                    )
+                    if inserted:
+                        await conn.execute("UPDATE users SET wallet = wallet + $1 WHERE user_id = $2", reward, user_id)
+                        await conn.execute(
+                            """
+                            INSERT INTO transaction_log (user_id, guild_id, action, amount, game, result)
+                            VALUES ($1, $2, $3, $4, $5, $6)
+                            """,
+                            user_id, "top.gg", "vote_reward", reward, "top.gg", "vote",
+                        )
+                        logger.info("Granted %s coins to Top.gg voter %s", reward, user_id)
+        except Exception:
+            logger.exception("Failed to process Top.gg vote for user %s", user_id)
+            return web.json_response({"error": "database failure"}, status=500)
+        return web.json_response({"ok": True})
 
     async def on_ready(self):
         logger.info(f"Bot Online! Logged in as {self.user.name} (ID: {self.user.id})")
