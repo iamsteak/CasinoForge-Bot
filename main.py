@@ -224,9 +224,11 @@ class CasinoForge(commands.Bot):
         try:
             app = web.Application()
             app.router.add_post(TOPGG_WEBHOOK_PATH, self._handle_topgg_webhook)
+            # Cogithost's webhook proxy forwards the request to `/`.
+            app.router.add_post("/", self._handle_topgg_webhook)
             runner = web.AppRunner(app)
             await runner.setup()
-            port = int(os.getenv("TOPGG_WEBHOOK_PORT", "8080"))
+            port = int(os.getenv("TOPGG_WEBHOOK_PORT", "25568"))
             site = web.TCPSite(runner, host="0.0.0.0", port=port)
             await site.start()
             self.topgg_runner = runner
