@@ -239,6 +239,15 @@ class CasinoForge(commands.Bot):
         secret = os.getenv("TOPGG_WEBHOOK_SECRET", "")
         raw_body = await request.read()
         signature = request.headers.get("x-topgg-signature", "")
+        # Top.gg dashboard connectivity tests may not include a production
+        # signature. They never grant rewards, so acknowledge test payloads
+        # before authentication while keeping real vote events protected.
+        try:
+            preliminary_payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            preliminary_payload = {}
+        if preliminary_payload.get("type") in ("webhook.test", "test"):
+            return web.json_response({"ok": True, "test": True})
         authorized = False
         if signature:
             try:
@@ -264,8 +273,6 @@ class CasinoForge(commands.Bot):
             return web.json_response({"error": "invalid json"}, status=400)
 
         event_type = payload.get("type")
-        if event_type == "webhook.test" or payload.get("type") == "test":
-            return web.json_response({"ok": True, "test": True})
 
         data = payload.get("data", {}) if event_type == "vote.create" else payload
         if event_type not in ("vote.create", None) and data.get("type") != "upvote":
