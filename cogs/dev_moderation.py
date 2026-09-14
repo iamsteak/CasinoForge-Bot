@@ -250,5 +250,3 @@ async def setup(bot: commands.Bot):
 
 async def teardown(bot: commands.Bot):
     logger.info("Dev moderation cog unloaded")
-EOF
-ls -l /home/ubuntu/CasinoForge-Bot/cogs/dev_moderation.py
