@@ -69,6 +69,12 @@ class CasinoForge(commands.Bot):
         self.maintenance_mode = False
         self.global_multiplier = 1.0
         self.topgg_runner = None
+        self.disabled_cogs: set[str] = set()
+        self.initial_cogs = [
+            "cogs.gambling", "cogs.staff", "cogs.creator", "cogs.dev_moderation",
+            "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest", "cogs.stats",
+            "cogs.role_nicknames", "cogs.profile",
+        ]
 
     async def setup_hook(self):
         # Auto-initialize database tables if not exist
@@ -171,6 +177,23 @@ class CasinoForge(commands.Bot):
                         claimed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_warnings (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id TEXT NOT NULL,
+                        moderator_id TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS cog_settings (
+                        cog_name TEXT PRIMARY KEY,
+                        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                        updated_by TEXT,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
                 logger.info("Database tables verified/initialized successfully.")
         except Exception as e:
             logger.error(f"Failed to initialize database tables: {e}")
@@ -185,12 +208,21 @@ class CasinoForge(commands.Bot):
         except Exception as e:
             logger.warning(f"Could not load global multiplier from DB: {e}")
         
+                # Load persistent cog enable/disable settings before registering commands.
+        try:
+            async with self.db_pool.acquire() as conn:
+                disabled_rows = await conn.fetch("SELECT cog_name FROM cog_settings WHERE enabled = FALSE")
+                self.disabled_cogs = {str(row["cog_name"]).lower() for row in disabled_rows}
+        except Exception as e:
+            logger.warning("Could not load cog settings: %s", e)
         # Attach the error handler directly to the tree inside the setup hook safely
         self.tree.on_error = self.on_app_command_error
+        for cog in self.initial_cogs:
+            cog_name = cog.rsplit(".", 1)[-1]
+            if cog_name in self.disabled_cogs and cog_name not in {"creator", "dev_moderation"}:
+                logger.info("Skipping disabled cog: %s", cog)
+                continue
 
-        initial_cogs = ["cogs.gambling", "cogs.staff", "cogs.creator", "cogs.fun", "cogs.action", "cogs.beg", "cogs.invest", "cogs.stats", "cogs.role_nicknames", "cogs.profile"]
-        
-        for cog in initial_cogs:
             try:
                 await self.load_extension(cog)
                 logger.info(f"Successfully loaded module: {cog}")
